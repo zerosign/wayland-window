@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["DecoratedSurface","A decorated surface, wrapping a wayalnd surface and handling its decorations."]]});
+initSidebarItems({"fn":[["substract_borders",""]],"struct":[["DecoratedSurface",""]]});

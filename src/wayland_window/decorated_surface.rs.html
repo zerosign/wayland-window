@@ -367,19 +367,53 @@
 <span id="325">325</span>
 <span id="326">326</span>
 <span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
+<span id="340">340</span>
+<span id="341">341</span>
+<span id="342">342</span>
+<span id="343">343</span>
+<span id="344">344</span>
+<span id="345">345</span>
+<span id="346">346</span>
+<span id="347">347</span>
+<span id="348">348</span>
+<span id="349">349</span>
+<span id="350">350</span>
+<span id="351">351</span>
+<span id="352">352</span>
+<span id="353">353</span>
+<span id="354">354</span>
+<span id="355">355</span>
+<span id="356">356</span>
+<span id="357">357</span>
+<span id="358">358</span>
+<span id="359">359</span>
+<span id="360">360</span>
+<span id="361">361</span>
 </pre><pre class='rust '>
 <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>cmp</span>::<span class='ident'>max</span>;
-<span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>ffi</span>::<span class='ident'>CString</span>;
-<span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>ops</span>::<span class='ident'>Deref</span>;
-<span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>sync</span>::{<span class='ident'>Arc</span>, <span class='ident'>Mutex</span>};
+<span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>io</span>::{<span class='ident'>Seek</span>, <span class='ident'>SeekFrom</span>, <span class='ident'>Write</span>};
+<span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>ops</span>::{<span class='ident'>Deref</span>, <span class='ident'>DerefMut</span>};
+<span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>sync</span>::{<span class='ident'>Arc</span>, <span class='ident'>Mutex</span>, <span class='ident'>MutexGuard</span>};
 
 <span class='kw'>use</span> <span class='ident'>byteorder</span>::{<span class='ident'>WriteBytesExt</span>, <span class='ident'>NativeEndian</span>};
 
-<span class='kw'>use</span> <span class='ident'>libc</span>::{<span class='ident'>c_char</span>, <span class='ident'>c_int</span>, <span class='ident'>off_t</span>, <span class='ident'>size_t</span>, <span class='ident'>ftruncate</span>, <span class='ident'>unlink</span>, <span class='ident'>write</span>, <span class='ident'>lseek</span>, <span class='ident'>SEEK_SET</span>};
+<span class='kw'>use</span> <span class='ident'>tempfile</span>::<span class='ident'>TempFile</span>;
 
 <span class='kw'>use</span> <span class='ident'>wayland</span>::<span class='ident'>core</span>::{<span class='ident'>Surface</span>, <span class='ident'>Registry</span>};
 <span class='kw'>use</span> <span class='ident'>wayland</span>::<span class='ident'>core</span>::<span class='ident'>compositor</span>::{<span class='ident'>WSurface</span>, <span class='ident'>SurfaceId</span>};
-<span class='kw'>use</span> <span class='ident'>wayland</span>::<span class='ident'>core</span>::<span class='ident'>seat</span>::{<span class='ident'>Seat</span>, <span class='ident'>Pointer</span>};
+<span class='kw'>use</span> <span class='ident'>wayland</span>::<span class='ident'>core</span>::<span class='ident'>seat</span>::{<span class='ident'>Seat</span>, <span class='ident'>Pointer</span>, <span class='ident'>ButtonState</span>};
 <span class='kw'>use</span> <span class='ident'>wayland</span>::<span class='ident'>core</span>::<span class='ident'>shell</span>::{<span class='ident'>ShellSurface</span>, <span class='ident'>ShellSurfaceResize</span>};
 <span class='kw'>use</span> <span class='ident'>wayland</span>::<span class='ident'>core</span>::<span class='ident'>shm</span>::{<span class='ident'>Buffer</span>, <span class='ident'>ShmPool</span>, <span class='ident'>ShmFormat</span>};
 <span class='kw'>use</span> <span class='ident'>wayland</span>::<span class='ident'>core</span>::<span class='ident'>subcompositor</span>::<span class='ident'>SubSurface</span>;
@@ -411,49 +445,85 @@
     <span class='ident'>Left</span>
 }
 
-<span class='kw'>struct</span> <span class='ident'>DecoratedInternals</span> {
-    <span class='ident'>shell_surface</span>: <span class='ident'>ShellSurface</span><span class='op'>&lt;</span><span class='ident'>WSurface</span><span class='op'>&gt;</span>,
+<span class='kw'>struct</span> <span class='ident'>PointerState</span> {
+    <span class='ident'>surfaces</span>: <span class='ident'>Vec</span><span class='op'>&lt;</span><span class='ident'>SurfaceId</span><span class='op'>&gt;</span>,
+    <span class='ident'>location</span>: <span class='ident'>PtrLocation</span>,
+    <span class='ident'>coordinates</span>: (<span class='ident'>f64</span>, <span class='ident'>f64</span>),
+    <span class='ident'>surface_width</span>: <span class='ident'>u32</span>,
+}
+
+<span class='kw'>impl</span> <span class='ident'>PointerState</span> {
+    <span class='kw'>fn</span> <span class='ident'>pointer_entered</span>(<span class='kw-2'>&amp;</span><span class='kw-2'>mut</span> <span class='self'>self</span>, <span class='ident'>sid</span>: <span class='ident'>SurfaceId</span>) {
+        <span class='kw'>if</span> <span class='self'>self</span>.<span class='ident'>surfaces</span>[<span class='ident'>BORDER_TOP</span>] <span class='op'>==</span> <span class='ident'>sid</span> {
+            <span class='self'>self</span>.<span class='ident'>location</span> <span class='op'>=</span> <span class='ident'>PtrLocation</span>::<span class='ident'>Top</span>;
+        } <span class='kw'>else</span> <span class='kw'>if</span> <span class='self'>self</span>.<span class='ident'>surfaces</span>[<span class='ident'>BORDER_RIGHT</span>] <span class='op'>==</span> <span class='ident'>sid</span> {
+            <span class='self'>self</span>.<span class='ident'>location</span> <span class='op'>=</span> <span class='ident'>PtrLocation</span>::<span class='ident'>Right</span>
+        } <span class='kw'>else</span> <span class='kw'>if</span> <span class='self'>self</span>.<span class='ident'>surfaces</span>[<span class='ident'>BORDER_BOTTOM</span>] <span class='op'>==</span> <span class='ident'>sid</span> {
+            <span class='self'>self</span>.<span class='ident'>location</span> <span class='op'>=</span> <span class='ident'>PtrLocation</span>::<span class='ident'>Bottom</span>;
+        } <span class='kw'>else</span> <span class='kw'>if</span> <span class='self'>self</span>.<span class='ident'>surfaces</span>[<span class='ident'>BORDER_LEFT</span>] <span class='op'>==</span> <span class='ident'>sid</span> {
+            <span class='self'>self</span>.<span class='ident'>location</span> <span class='op'>=</span> <span class='ident'>PtrLocation</span>::<span class='ident'>Left</span>
+        } <span class='kw'>else</span> {
+            <span class='comment'>// should probably never happen ?</span>
+            <span class='self'>self</span>.<span class='ident'>location</span> <span class='op'>=</span> <span class='ident'>PtrLocation</span>::<span class='prelude-val'>None</span>;
+        }
+    }
+
+    <span class='kw'>fn</span> <span class='ident'>pointer_left</span>(<span class='kw-2'>&amp;</span><span class='kw-2'>mut</span> <span class='self'>self</span>) {
+        <span class='self'>self</span>.<span class='ident'>location</span> <span class='op'>=</span> <span class='ident'>PtrLocation</span>::<span class='prelude-val'>None</span>;
+    }
+}
+
+<span class='kw'>pub</span> <span class='kw'>struct</span> <span class='ident'>DecoratedSurface</span><span class='op'>&lt;</span><span class='ident'>S</span>: <span class='ident'>Surface</span><span class='op'>&gt;</span> {
+    <span class='ident'>shell_surface</span>: <span class='ident'>Arc</span><span class='op'>&lt;</span><span class='ident'>Mutex</span><span class='op'>&lt;</span><span class='prelude-ty'>Option</span><span class='op'>&lt;</span><span class='ident'>ShellSurface</span><span class='op'>&lt;</span><span class='ident'>S</span><span class='op'>&gt;&gt;</span><span class='op'>&gt;&gt;</span>,
     <span class='ident'>border_surfaces</span>: <span class='ident'>Vec</span><span class='op'>&lt;</span><span class='ident'>SubSurface</span><span class='op'>&lt;</span><span class='ident'>WSurface</span><span class='op'>&gt;&gt;</span>,
     <span class='ident'>buffers</span>: <span class='ident'>Vec</span><span class='op'>&lt;</span><span class='ident'>Buffer</span><span class='op'>&gt;</span>,
-    <span class='ident'>shm_fd</span>: <span class='ident'>c_int</span>,
+    <span class='ident'>tempfile</span>: <span class='ident'>TempFile</span>,
     <span class='ident'>pool</span>: <span class='ident'>ShmPool</span>,
     <span class='ident'>height</span>: <span class='ident'>u32</span>,
     <span class='ident'>width</span>: <span class='ident'>u32</span>,
     <span class='ident'>buffer_capacity</span>: <span class='ident'>usize</span>,
-    <span class='ident'>pointer</span>: <span class='prelude-ty'>Option</span><span class='op'>&lt;</span><span class='ident'>Pointer</span><span class='op'>&lt;</span><span class='ident'>WSurface</span><span class='op'>&gt;&gt;</span>,
-    <span class='ident'>configure_user_callback</span>: <span class='ident'>Box</span><span class='op'>&lt;</span><span class='ident'>Fn</span>(<span class='ident'>ShellSurfaceResize</span>, <span class='ident'>i32</span>, <span class='ident'>i32</span>) <span class='op'>+</span> <span class='lifetime'>&#39;static</span> <span class='op'>+</span> <span class='ident'>Send</span> <span class='op'>+</span> <span class='ident'>Sync</span><span class='op'>&gt;</span>,
-    <span class='ident'>current_pointer_location</span>: <span class='ident'>PtrLocation</span>,
-    <span class='ident'>current_pointer_coordinates</span>: (<span class='ident'>f64</span>, <span class='ident'>f64</span>)
+    <span class='ident'>_pointer</span>: <span class='prelude-ty'>Option</span><span class='op'>&lt;</span><span class='ident'>Pointer</span><span class='op'>&lt;</span><span class='ident'>WSurface</span><span class='op'>&gt;&gt;</span>,
+    <span class='ident'>pointer_state</span>: <span class='ident'>Arc</span><span class='op'>&lt;</span><span class='ident'>Mutex</span><span class='op'>&lt;</span><span class='ident'>PointerState</span><span class='op'>&gt;&gt;</span>
 }
 
-<span class='kw'>impl</span> <span class='ident'>DecoratedInternals</span> {
-    <span class='kw'>fn</span> <span class='ident'>resize</span>(<span class='kw-2'>&amp;</span><span class='kw-2'>mut</span> <span class='self'>self</span>, <span class='ident'>width</span>: <span class='ident'>u32</span>, <span class='ident'>height</span>: <span class='ident'>u32</span>) {
+<span class='kw'>pub</span> <span class='kw'>struct</span> <span class='ident'>SurfaceGuard</span><span class='op'>&lt;</span><span class='lifetime'>&#39;a</span>, <span class='ident'>S</span>: <span class='ident'>Surface</span> <span class='op'>+</span> <span class='lifetime'>&#39;a</span><span class='op'>&gt;</span> {
+    <span class='ident'>guard</span>: <span class='ident'>MutexGuard</span><span class='op'>&lt;</span><span class='lifetime'>&#39;a</span>, <span class='prelude-ty'>Option</span><span class='op'>&lt;</span><span class='ident'>ShellSurface</span><span class='op'>&lt;</span><span class='ident'>S</span><span class='op'>&gt;&gt;</span><span class='op'>&gt;</span>
+}
+
+<span class='kw'>impl</span><span class='op'>&lt;</span><span class='lifetime'>&#39;a</span>, <span class='ident'>S</span>: <span class='ident'>Surface</span> <span class='op'>+</span> <span class='lifetime'>&#39;a</span><span class='op'>&gt;</span> <span class='ident'>Deref</span> <span class='kw'>for</span> <span class='ident'>SurfaceGuard</span><span class='op'>&lt;</span><span class='lifetime'>&#39;a</span>, <span class='ident'>S</span><span class='op'>&gt;</span> {
+    <span class='kw'>type</span> <span class='ident'>Target</span> <span class='op'>=</span> <span class='ident'>ShellSurface</span><span class='op'>&lt;</span><span class='ident'>S</span><span class='op'>&gt;</span>;
+    <span class='kw'>fn</span> <span class='ident'>deref</span>(<span class='kw-2'>&amp;</span><span class='self'>self</span>) <span class='op'>-&gt;</span> <span class='kw-2'>&amp;</span><span class='ident'>ShellSurface</span><span class='op'>&lt;</span><span class='ident'>S</span><span class='op'>&gt;</span> {
+        <span class='self'>self</span>.<span class='ident'>guard</span>.<span class='ident'>as_ref</span>().<span class='ident'>unwrap</span>()
+    }
+}
+
+<span class='kw'>impl</span><span class='op'>&lt;</span><span class='lifetime'>&#39;a</span>, <span class='ident'>S</span>: <span class='ident'>Surface</span> <span class='op'>+</span> <span class='lifetime'>&#39;a</span><span class='op'>&gt;</span> <span class='ident'>DerefMut</span> <span class='kw'>for</span> <span class='ident'>SurfaceGuard</span><span class='op'>&lt;</span><span class='lifetime'>&#39;a</span>, <span class='ident'>S</span><span class='op'>&gt;</span> {
+    <span class='kw'>fn</span> <span class='ident'>deref_mut</span>(<span class='kw-2'>&amp;</span><span class='kw-2'>mut</span> <span class='self'>self</span>) <span class='op'>-&gt;</span> <span class='kw-2'>&amp;</span><span class='kw-2'>mut</span> <span class='ident'>ShellSurface</span><span class='op'>&lt;</span><span class='ident'>S</span><span class='op'>&gt;</span> {
+        <span class='self'>self</span>.<span class='ident'>guard</span>.<span class='ident'>as_mut</span>().<span class='ident'>unwrap</span>()
+    }
+}
+
+<span class='kw'>impl</span><span class='op'>&lt;</span><span class='ident'>S</span>: <span class='ident'>Surface</span> <span class='op'>+</span> <span class='ident'>Send</span> <span class='op'>+</span> <span class='lifetime'>&#39;static</span><span class='op'>&gt;</span> <span class='ident'>DecoratedSurface</span><span class='op'>&lt;</span><span class='ident'>S</span><span class='op'>&gt;</span> {
+    <span class='kw'>pub</span> <span class='kw'>fn</span> <span class='ident'>resize</span>(<span class='kw-2'>&amp;</span><span class='kw-2'>mut</span> <span class='self'>self</span>, <span class='ident'>width</span>: <span class='ident'>u32</span>, <span class='ident'>height</span>: <span class='ident'>u32</span>) {
         <span class='kw'>let</span> <span class='ident'>new_pxcount</span> <span class='op'>=</span> <span class='ident'>max</span>(<span class='ident'>DECORATION_TOP_SIZE</span> <span class='op'>*</span> (<span class='ident'>DECORATION_SIZE</span> <span class='op'>*</span> <span class='number'>2</span> <span class='op'>+</span> (<span class='ident'>width</span> <span class='kw'>as</span> <span class='ident'>usize</span>)),
             <span class='ident'>max</span>(<span class='ident'>DECORATION_TOP_SIZE</span> <span class='op'>*</span> (<span class='ident'>width</span> <span class='kw'>as</span> <span class='ident'>usize</span>), <span class='ident'>DECORATION_SIZE</span> <span class='op'>*</span> (<span class='ident'>height</span> <span class='kw'>as</span> <span class='ident'>usize</span>))
         );
         <span class='kw'>if</span> <span class='ident'>new_pxcount</span> <span class='op'>*</span> <span class='number'>4</span> <span class='op'>&gt;</span> <span class='self'>self</span>.<span class='ident'>buffer_capacity</span> {
             <span class='comment'>// reallocation needed !</span>
-            <span class='kw'>unsafe</span> { <span class='ident'>ftruncate</span>(<span class='self'>self</span>.<span class='ident'>shm_fd</span>, (<span class='ident'>new_pxcount</span> <span class='op'>*</span> <span class='number'>4</span>) <span class='kw'>as</span> <span class='ident'>off_t</span>) };
+            <span class='self'>self</span>.<span class='ident'>tempfile</span>.<span class='ident'>set_len</span>((<span class='ident'>new_pxcount</span> <span class='op'>*</span> <span class='number'>4</span>) <span class='kw'>as</span> <span class='ident'>u64</span>).<span class='ident'>unwrap</span>();
             <span class='self'>self</span>.<span class='ident'>pool</span>.<span class='ident'>resize</span>((<span class='ident'>new_pxcount</span> <span class='op'>*</span> <span class='number'>4</span>) <span class='kw'>as</span> <span class='ident'>i32</span>);
             <span class='self'>self</span>.<span class='ident'>buffer_capacity</span> <span class='op'>=</span> <span class='ident'>new_pxcount</span> <span class='op'>*</span> <span class='number'>4</span>;
         }
         <span class='self'>self</span>.<span class='ident'>width</span> <span class='op'>=</span> <span class='ident'>width</span>;
         <span class='self'>self</span>.<span class='ident'>height</span> <span class='op'>=</span> <span class='ident'>height</span>;
+        <span class='self'>self</span>.<span class='ident'>pointer_state</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>().<span class='ident'>surface_width</span> <span class='op'>=</span> <span class='ident'>width</span>;
         <span class='comment'>// rewrite the data</span>
-        {
-            <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>new_data</span> <span class='op'>=</span> <span class='ident'>Vec</span>::<span class='op'>&lt;</span><span class='ident'>u8</span><span class='op'>&gt;</span>::<span class='ident'>with_capacity</span>(<span class='ident'>new_pxcount</span> <span class='op'>*</span> <span class='number'>4</span>);
-            <span class='kw'>for</span> _ <span class='kw'>in</span> <span class='number'>0</span>..(<span class='ident'>new_pxcount</span><span class='op'>*</span><span class='number'>4</span>) {
-                <span class='comment'>// write a dark gray</span>
-                <span class='kw'>let</span> _ <span class='op'>=</span> <span class='ident'>new_data</span>.<span class='ident'>write_u32</span>::<span class='op'>&lt;</span><span class='ident'>NativeEndian</span><span class='op'>&gt;</span>(<span class='number'>0xFF444444</span>);
-            }
-            <span class='kw'>unsafe</span> {
-                <span class='ident'>lseek</span>(<span class='self'>self</span>.<span class='ident'>shm_fd</span>, <span class='number'>0</span>, <span class='ident'>SEEK_SET</span>);
-                <span class='ident'>write</span>(<span class='self'>self</span>.<span class='ident'>shm_fd</span>, <span class='ident'>new_data</span>.<span class='ident'>as_ptr</span>() <span class='kw'>as</span> <span class='op'>*</span><span class='kw'>const</span> _, <span class='ident'>new_data</span>.<span class='ident'>len</span>() <span class='kw'>as</span> <span class='ident'>size_t</span>);
-            }
+        <span class='self'>self</span>.<span class='ident'>tempfile</span>.<span class='ident'>seek</span>(<span class='ident'>SeekFrom</span>::<span class='ident'>Start</span>(<span class='number'>0</span>)).<span class='ident'>unwrap</span>();
+        <span class='kw'>for</span> _ <span class='kw'>in</span> <span class='number'>0</span>..(<span class='ident'>new_pxcount</span><span class='op'>*</span><span class='number'>4</span>) {
+            <span class='comment'>// write a dark gray</span>
+            <span class='kw'>let</span> _ <span class='op'>=</span> <span class='self'>self</span>.<span class='ident'>tempfile</span>.<span class='ident'>write_u32</span>::<span class='op'>&lt;</span><span class='ident'>NativeEndian</span><span class='op'>&gt;</span>(<span class='number'>0xFF444444</span>);
         }
-
-        <span class='comment'>//drop(mmap);</span>
-        
+        <span class='self'>self</span>.<span class='ident'>tempfile</span>.<span class='ident'>flush</span>().<span class='ident'>unwrap</span>();
         <span class='comment'>// resize the borders</span>
         <span class='self'>self</span>.<span class='ident'>buffers</span>.<span class='ident'>clear</span>();
         <span class='comment'>// top</span>
@@ -461,11 +531,15 @@
             <span class='kw'>let</span> <span class='ident'>buffer</span> <span class='op'>=</span> <span class='self'>self</span>.<span class='ident'>pool</span>.<span class='ident'>create_buffer</span>(
                 <span class='number'>0</span>,
                 <span class='self'>self</span>.<span class='ident'>width</span> <span class='kw'>as</span> <span class='ident'>i32</span> <span class='op'>+</span> (<span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>) <span class='op'>*</span> <span class='number'>2</span>,
-                <span class='ident'>DECORATION_TOP_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>, (<span class='self'>self</span>.<span class='ident'>width</span><span class='op'>*</span><span class='number'>4</span>) <span class='kw'>as</span> <span class='ident'>i32</span>,
+                <span class='ident'>DECORATION_TOP_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>,
+                (<span class='self'>self</span>.<span class='ident'>width</span> <span class='kw'>as</span> <span class='ident'>i32</span> <span class='op'>+</span> (<span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>) <span class='op'>*</span> <span class='number'>2</span>) <span class='op'>*</span> <span class='number'>4</span>,
                 <span class='ident'>ShmFormat</span>::<span class='ident'>ARGB8888</span>
             ).<span class='ident'>unwrap</span>();
             <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_TOP</span>].<span class='ident'>attach</span>(<span class='kw-2'>&amp;</span><span class='ident'>buffer</span>, <span class='number'>0</span>, <span class='number'>0</span>);
-            <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_TOP</span>].<span class='ident'>set_position</span>(<span class='number'>0</span>, <span class='number'>0</span>);
+            <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_TOP</span>].<span class='ident'>set_position</span>(
+                <span class='op'>-</span>(<span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>),
+                <span class='op'>-</span>(<span class='ident'>DECORATION_TOP_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>)
+            );
             <span class='self'>self</span>.<span class='ident'>buffers</span>.<span class='ident'>push</span>(<span class='ident'>buffer</span>);
         }
         <span class='comment'>// right</span>
@@ -476,8 +550,7 @@
                 <span class='ident'>ShmFormat</span>::<span class='ident'>ARGB8888</span>
             ).<span class='ident'>unwrap</span>();
             <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_RIGHT</span>].<span class='ident'>attach</span>(<span class='kw-2'>&amp;</span><span class='ident'>buffer</span>, <span class='number'>0</span>, <span class='number'>0</span>);
-            <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_RIGHT</span>].<span class='ident'>set_position</span>(
-                <span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span> <span class='op'>+</span> <span class='self'>self</span>.<span class='ident'>width</span> <span class='kw'>as</span> <span class='ident'>i32</span>, <span class='ident'>DECORATION_TOP_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>);
+            <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_RIGHT</span>].<span class='ident'>set_position</span>(<span class='self'>self</span>.<span class='ident'>width</span> <span class='kw'>as</span> <span class='ident'>i32</span>, <span class='number'>0</span>);
             <span class='self'>self</span>.<span class='ident'>buffers</span>.<span class='ident'>push</span>(<span class='ident'>buffer</span>);
         }
         <span class='comment'>// bottom</span>
@@ -485,13 +558,12 @@
             <span class='kw'>let</span> <span class='ident'>buffer</span> <span class='op'>=</span> <span class='self'>self</span>.<span class='ident'>pool</span>.<span class='ident'>create_buffer</span>(
                 <span class='number'>0</span>,
                 <span class='self'>self</span>.<span class='ident'>width</span> <span class='kw'>as</span> <span class='ident'>i32</span> <span class='op'>+</span> (<span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>) <span class='op'>*</span> <span class='number'>2</span>,
-                <span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>, (<span class='self'>self</span>.<span class='ident'>width</span><span class='op'>*</span><span class='number'>4</span>) <span class='kw'>as</span> <span class='ident'>i32</span>,
+                <span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>,
+                (<span class='self'>self</span>.<span class='ident'>width</span> <span class='kw'>as</span> <span class='ident'>i32</span> <span class='op'>+</span> (<span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>) <span class='op'>*</span> <span class='number'>2</span>) <span class='op'>*</span> <span class='number'>4</span>,
                 <span class='ident'>ShmFormat</span>::<span class='ident'>ARGB8888</span>
             ).<span class='ident'>unwrap</span>();
             <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_BOTTOM</span>].<span class='ident'>attach</span>(<span class='kw-2'>&amp;</span><span class='ident'>buffer</span>, <span class='number'>0</span>, <span class='number'>0</span>);
-            <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_BOTTOM</span>].<span class='ident'>set_position</span>(
-                <span class='number'>0</span>,
-                <span class='ident'>DECORATION_TOP_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span> <span class='op'>+</span> <span class='self'>self</span>.<span class='ident'>height</span> <span class='kw'>as</span> <span class='ident'>i32</span>);
+            <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_BOTTOM</span>].<span class='ident'>set_position</span>(<span class='op'>-</span>(<span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>), <span class='self'>self</span>.<span class='ident'>height</span> <span class='kw'>as</span> <span class='ident'>i32</span>);
             <span class='self'>self</span>.<span class='ident'>buffers</span>.<span class='ident'>push</span>(<span class='ident'>buffer</span>);
         }
         <span class='comment'>// left</span>
@@ -502,51 +574,13 @@
                 <span class='ident'>ShmFormat</span>::<span class='ident'>ARGB8888</span>
             ).<span class='ident'>unwrap</span>();
             <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_LEFT</span>].<span class='ident'>attach</span>(<span class='kw-2'>&amp;</span><span class='ident'>buffer</span>, <span class='number'>0</span>, <span class='number'>0</span>);
-            <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_LEFT</span>].<span class='ident'>set_position</span>(<span class='number'>0</span>,
-                <span class='ident'>DECORATION_TOP_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>);
+            <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_LEFT</span>].<span class='ident'>set_position</span>(<span class='op'>-</span>(<span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>), <span class='number'>0</span>);
             <span class='self'>self</span>.<span class='ident'>buffers</span>.<span class='ident'>push</span>(<span class='ident'>buffer</span>);
         }
 
         <span class='kw'>for</span> <span class='ident'>s</span> <span class='kw'>in</span> <span class='kw-2'>&amp;</span><span class='self'>self</span>.<span class='ident'>border_surfaces</span> { <span class='ident'>s</span>.<span class='ident'>commit</span>(); }
-
-        {
-            <span class='kw'>let</span> <span class='ident'>buffer</span> <span class='op'>=</span> <span class='self'>self</span>.<span class='ident'>pool</span>.<span class='ident'>create_buffer</span>(
-                <span class='number'>0</span>, <span class='number'>1</span>, <span class='number'>1</span>, <span class='number'>4</span>,
-                <span class='ident'>ShmFormat</span>::<span class='ident'>ARGB8888</span>
-            ).<span class='ident'>unwrap</span>();
-            <span class='self'>self</span>.<span class='ident'>shell_surface</span>.<span class='ident'>attach</span>(<span class='kw-2'>&amp;</span><span class='ident'>buffer</span>, <span class='number'>0</span>, <span class='number'>0</span>);
-            <span class='self'>self</span>.<span class='ident'>buffers</span>.<span class='ident'>push</span>(<span class='ident'>buffer</span>);
-            <span class='self'>self</span>.<span class='ident'>shell_surface</span>.<span class='ident'>commit</span>();
-        }
     }
 
-    <span class='kw'>fn</span> <span class='ident'>pointer_entered</span>(<span class='kw-2'>&amp;</span><span class='kw-2'>mut</span> <span class='self'>self</span>, <span class='ident'>sid</span>: <span class='ident'>SurfaceId</span>) {
-        <span class='kw'>if</span> <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_TOP</span>].<span class='ident'>get_id</span>() <span class='op'>==</span> <span class='ident'>sid</span> {
-            <span class='self'>self</span>.<span class='ident'>current_pointer_location</span> <span class='op'>=</span> <span class='ident'>PtrLocation</span>::<span class='ident'>Top</span>;
-        } <span class='kw'>else</span> <span class='kw'>if</span> <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_RIGHT</span>].<span class='ident'>get_id</span>() <span class='op'>==</span> <span class='ident'>sid</span> {
-            <span class='self'>self</span>.<span class='ident'>current_pointer_location</span> <span class='op'>=</span> <span class='ident'>PtrLocation</span>::<span class='ident'>Right</span>
-        } <span class='kw'>else</span> <span class='kw'>if</span> <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_BOTTOM</span>].<span class='ident'>get_id</span>() <span class='op'>==</span> <span class='ident'>sid</span> {
-            <span class='self'>self</span>.<span class='ident'>current_pointer_location</span> <span class='op'>=</span> <span class='ident'>PtrLocation</span>::<span class='ident'>Bottom</span>;
-        } <span class='kw'>else</span> <span class='kw'>if</span> <span class='self'>self</span>.<span class='ident'>border_surfaces</span>[<span class='ident'>BORDER_LEFT</span>].<span class='ident'>get_id</span>() <span class='op'>==</span> <span class='ident'>sid</span> {
-            <span class='self'>self</span>.<span class='ident'>current_pointer_location</span> <span class='op'>=</span> <span class='ident'>PtrLocation</span>::<span class='ident'>Left</span>
-        } <span class='kw'>else</span> {
-            <span class='comment'>// should probably never happen ?</span>
-            <span class='self'>self</span>.<span class='ident'>current_pointer_location</span> <span class='op'>=</span> <span class='ident'>PtrLocation</span>::<span class='prelude-val'>None</span>;
-        }
-    }
-
-    <span class='kw'>fn</span> <span class='ident'>pointer_left</span>(<span class='kw-2'>&amp;</span><span class='kw-2'>mut</span> <span class='self'>self</span>) {
-        <span class='self'>self</span>.<span class='ident'>current_pointer_location</span> <span class='op'>=</span> <span class='ident'>PtrLocation</span>::<span class='prelude-val'>None</span>;
-    }
-}
-
-<span class='doccomment'>/// A decorated surface, wrapping a wayalnd surface and handling its decorations.</span>
-<span class='kw'>pub</span> <span class='kw'>struct</span> <span class='ident'>DecoratedSurface</span><span class='op'>&lt;</span><span class='ident'>S</span>: <span class='ident'>Surface</span><span class='op'>&gt;</span> {
-    <span class='ident'>internals</span>: <span class='ident'>Arc</span><span class='op'>&lt;</span><span class='ident'>Mutex</span><span class='op'>&lt;</span><span class='ident'>DecoratedInternals</span><span class='op'>&gt;&gt;</span>,
-    <span class='ident'>user_surface</span>: <span class='ident'>SubSurface</span><span class='op'>&lt;</span><span class='ident'>S</span><span class='op'>&gt;</span>,
-}
-
-<span class='kw'>impl</span><span class='op'>&lt;</span><span class='ident'>S</span>: <span class='ident'>Surface</span><span class='op'>&gt;</span> <span class='ident'>DecoratedSurface</span><span class='op'>&lt;</span><span class='ident'>S</span><span class='op'>&gt;</span> {
     <span class='doccomment'>/// Creates a new decorated window around given surface.</span>
     <span class='doccomment'>///</span>
     <span class='doccomment'>/// If the creation failed (likely if the registry was not ready), hands back the surface.</span>
@@ -576,97 +610,134 @@
             <span class='ident'>max</span>(<span class='ident'>DECORATION_TOP_SIZE</span> <span class='op'>*</span> (<span class='ident'>width</span> <span class='kw'>as</span> <span class='ident'>usize</span>), <span class='ident'>DECORATION_SIZE</span> <span class='op'>*</span> (<span class='ident'>height</span> <span class='kw'>as</span> <span class='ident'>usize</span>))
         );
 
-        <span class='kw'>let</span> <span class='ident'>pattern</span> <span class='op'>=</span> <span class='ident'>CString</span>::<span class='ident'>new</span>(<span class='string'>&quot;wayland-window-rs-XXXXXX&quot;</span>).<span class='ident'>unwrap</span>();
-        <span class='kw'>let</span> <span class='ident'>fd</span> <span class='op'>=</span> <span class='kw'>unsafe</span> { <span class='ident'>mkstemp</span>(<span class='ident'>pattern</span>.<span class='ident'>as_ptr</span>() <span class='kw'>as</span> <span class='op'>*</span><span class='kw-2'>mut</span> _) };
-        <span class='kw'>if</span> <span class='ident'>fd</span> <span class='op'>&lt;</span> <span class='number'>0</span> { <span class='kw'>return</span> <span class='prelude-val'>Err</span>(<span class='ident'>user_surface</span>) }
-        <span class='kw'>unsafe</span> {
-            <span class='ident'>ftruncate</span>(<span class='ident'>fd</span>, (<span class='ident'>pxcount</span> <span class='op'>*</span> <span class='number'>4</span>) <span class='kw'>as</span> <span class='ident'>off_t</span>);
-            <span class='ident'>unlink</span>(<span class='ident'>pattern</span>.<span class='ident'>as_ptr</span>());
-        }
+        <span class='kw'>let</span> <span class='ident'>tempfile</span> <span class='op'>=</span> <span class='kw'>match</span> <span class='ident'>TempFile</span>::<span class='ident'>new</span>() {
+            <span class='prelude-val'>Ok</span>(<span class='ident'>t</span>) <span class='op'>=&gt;</span> <span class='ident'>t</span>,
+            <span class='prelude-val'>Err</span>(_) <span class='op'>=&gt;</span> <span class='kw'>return</span> <span class='prelude-val'>Err</span>(<span class='ident'>user_surface</span>)
+        };
 
-        <span class='kw'>let</span> <span class='ident'>pool</span> <span class='op'>=</span> <span class='ident'>shm</span>.<span class='ident'>pool_from_raw_fd</span>(<span class='ident'>fd</span>, (<span class='ident'>pxcount</span> <span class='op'>*</span> <span class='number'>4</span>) <span class='kw'>as</span> <span class='ident'>i32</span>);
+        <span class='kw'>match</span> <span class='ident'>tempfile</span>.<span class='ident'>set_len</span>((<span class='ident'>pxcount</span> <span class='op'>*</span><span class='number'>4</span>) <span class='kw'>as</span> <span class='ident'>u64</span>) {
+            <span class='prelude-val'>Ok</span>(()) <span class='op'>=&gt;</span> {},
+            <span class='prelude-val'>Err</span>(_) <span class='op'>=&gt;</span> <span class='kw'>return</span> <span class='prelude-val'>Err</span>(<span class='ident'>user_surface</span>)
+        };
+
+        <span class='kw'>let</span> <span class='ident'>pool</span> <span class='op'>=</span> <span class='ident'>shm</span>.<span class='ident'>pool_from_fd</span>(<span class='kw-2'>&amp;</span><span class='ident'>tempfile</span>, (<span class='ident'>pxcount</span> <span class='op'>*</span> <span class='number'>4</span>) <span class='kw'>as</span> <span class='ident'>i32</span>);
 
         <span class='comment'>// create surfaces</span>
-        <span class='kw'>let</span> <span class='ident'>main_surface</span> <span class='op'>=</span> <span class='ident'>comp</span>.<span class='ident'>create_surface</span>();
-        <span class='kw'>let</span> <span class='ident'>user_subsurface</span> <span class='op'>=</span> <span class='ident'>subcomp</span>.<span class='ident'>get_subsurface</span>(<span class='ident'>user_surface</span>, <span class='kw-2'>&amp;</span><span class='ident'>main_surface</span>);
-        <span class='ident'>user_subsurface</span>.<span class='ident'>set_sync</span>(<span class='boolval'>false</span>);
         <span class='kw'>let</span> <span class='ident'>border_surfaces</span>: <span class='ident'>Vec</span><span class='op'>&lt;</span>_<span class='op'>&gt;</span> <span class='op'>=</span> (<span class='number'>0</span>..<span class='number'>4</span>).<span class='ident'>map</span>(<span class='op'>|</span>_<span class='op'>|</span>
-            <span class='ident'>subcomp</span>.<span class='ident'>get_subsurface</span>(<span class='ident'>comp</span>.<span class='ident'>create_surface</span>(), <span class='kw-2'>&amp;</span><span class='ident'>main_surface</span>)
+            <span class='ident'>subcomp</span>.<span class='ident'>get_subsurface</span>(<span class='ident'>comp</span>.<span class='ident'>create_surface</span>(), <span class='ident'>user_surface</span>.<span class='ident'>get_wsurface</span>())
         ).<span class='ident'>collect</span>();
+        <span class='kw'>for</span> <span class='ident'>s</span> <span class='kw'>in</span> <span class='kw-2'>&amp;</span><span class='ident'>border_surfaces</span> { <span class='ident'>s</span>.<span class='ident'>set_sync</span>(<span class='boolval'>false</span>) }
 
-        <span class='kw'>let</span> <span class='ident'>shell_surface</span> <span class='op'>=</span> <span class='ident'>shell</span>.<span class='ident'>get_shell_surface</span>(<span class='ident'>main_surface</span>);
+        <span class='kw'>let</span> <span class='ident'>shell_surface</span> <span class='op'>=</span> <span class='ident'>shell</span>.<span class='ident'>get_shell_surface</span>(<span class='ident'>user_surface</span>);
         <span class='ident'>shell_surface</span>.<span class='ident'>set_toplevel</span>();
 
         <span class='comment'>// Pointer</span>
-        <span class='kw'>let</span> <span class='ident'>pointer</span> <span class='op'>=</span> <span class='ident'>seat</span>.<span class='ident'>and_then</span>(<span class='op'>|</span><span class='ident'>seat</span><span class='op'>|</span> <span class='ident'>seat</span>.<span class='ident'>get_pointer</span>())
+        <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>pointer_state</span> <span class='op'>=</span> <span class='ident'>PointerState</span> {
+            <span class='ident'>surfaces</span>: <span class='ident'>Vec</span>::<span class='ident'>with_capacity</span>(<span class='number'>4</span>),
+            <span class='ident'>location</span>: <span class='ident'>PtrLocation</span>::<span class='prelude-val'>None</span>,
+            <span class='ident'>coordinates</span>: (<span class='number'>0.</span>, <span class='number'>0.</span>),
+            <span class='ident'>surface_width</span>: <span class='ident'>width</span>
+        };
+        <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>pointer</span> <span class='op'>=</span> <span class='ident'>seat</span>.<span class='ident'>and_then</span>(<span class='op'>|</span><span class='ident'>seat</span><span class='op'>|</span> <span class='ident'>seat</span>.<span class='ident'>get_pointer</span>())
                           .<span class='ident'>map</span>(<span class='op'>|</span><span class='kw-2'>mut</span> <span class='ident'>pointer</span><span class='op'>|</span> {
             <span class='comment'>// let (mut pointer, _) = pointer.set_cursor(Some(comp.create_surface()), (0,0));</span>
             <span class='kw'>for</span> <span class='ident'>s</span> <span class='kw'>in</span> <span class='kw-2'>&amp;</span><span class='ident'>border_surfaces</span> {
                 <span class='ident'>pointer</span>.<span class='ident'>add_handled_surface</span>(<span class='ident'>s</span>.<span class='ident'>get_id</span>());
+                <span class='ident'>pointer_state</span>.<span class='ident'>surfaces</span>.<span class='ident'>push</span>(<span class='ident'>s</span>.<span class='ident'>get_id</span>());
             }
             <span class='ident'>pointer</span>
         });
+        <span class='kw'>let</span> <span class='ident'>pointer_state</span> <span class='op'>=</span> <span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>Mutex</span>::<span class='ident'>new</span>(<span class='ident'>pointer_state</span>));
 
-        <span class='comment'>// place the user surface</span>
-        <span class='ident'>user_subsurface</span>.<span class='ident'>set_position</span>(<span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>, <span class='ident'>DECORATION_TOP_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>);
+        <span class='kw'>let</span> <span class='ident'>shell_surface</span> <span class='op'>=</span> <span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>Mutex</span>::<span class='ident'>new</span>(<span class='prelude-val'>Some</span>(<span class='ident'>shell_surface</span>)));
 
-        <span class='kw'>let</span> <span class='ident'>internals</span> <span class='op'>=</span> <span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>Mutex</span>::<span class='ident'>new</span>(<span class='ident'>DecoratedInternals</span> {
-            <span class='ident'>shell_surface</span>: <span class='ident'>shell_surface</span>,
-            <span class='ident'>border_surfaces</span>: <span class='ident'>border_surfaces</span>,
-            <span class='ident'>buffers</span>: <span class='ident'>Vec</span>::<span class='ident'>new</span>(),
-            <span class='ident'>height</span>: <span class='ident'>height</span>,
-            <span class='ident'>width</span>: <span class='ident'>width</span>,
-            <span class='ident'>shm_fd</span>: <span class='ident'>fd</span>,
-            <span class='ident'>pool</span>: <span class='ident'>pool</span>,
-            <span class='ident'>buffer_capacity</span>: <span class='ident'>pxcount</span> <span class='op'>*</span> <span class='number'>4</span>,
-            <span class='ident'>pointer</span>: <span class='ident'>pointer</span>,
-            <span class='ident'>configure_user_callback</span>: <span class='ident'>Box</span>::<span class='ident'>new</span>(<span class='kw'>move</span> <span class='op'>|</span>_,_,_<span class='op'>|</span> {}),
-            <span class='ident'>current_pointer_location</span>: <span class='ident'>PtrLocation</span>::<span class='prelude-val'>None</span>,
-            <span class='ident'>current_pointer_coordinates</span>: (<span class='number'>0.</span>, <span class='number'>0.</span>)
-        }));
-
-        {
-
-            <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>internals_guard</span> <span class='op'>=</span> <span class='ident'>internals</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>();
-            <span class='kw'>let</span> <span class='ident'>my_internals</span> <span class='op'>=</span> <span class='ident'>internals</span>.<span class='ident'>clone</span>();
-
-            <span class='ident'>internals_guard</span>.<span class='ident'>shell_surface</span>.<span class='ident'>set_configure_callback</span>(<span class='kw'>move</span> <span class='op'>|</span><span class='ident'>resizedir</span>, <span class='ident'>width</span>, <span class='ident'>height</span><span class='op'>|</span> {
-                <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>guard</span> <span class='op'>=</span> <span class='ident'>my_internals</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>();
-                <span class='ident'>guard</span>.<span class='ident'>resize</span>(<span class='ident'>width</span> <span class='kw'>as</span> <span class='ident'>u32</span>, <span class='ident'>height</span> <span class='kw'>as</span> <span class='ident'>u32</span>);
-                (<span class='ident'>guard</span>.<span class='ident'>configure_user_callback</span>)(
-                    <span class='ident'>resizedir</span>,
-                    <span class='ident'>width</span> <span class='op'>-</span> (<span class='ident'>DECORATION_SIZE</span><span class='op'>*</span><span class='number'>2</span>) <span class='kw'>as</span> <span class='ident'>i32</span>,
-                    <span class='ident'>height</span> <span class='op'>-</span> (<span class='ident'>DECORATION_SIZE</span> <span class='op'>+</span> <span class='ident'>DECORATION_TOP_SIZE</span>) <span class='kw'>as</span> <span class='ident'>i32</span>
-                );
+        <span class='kw'>if</span> <span class='kw'>let</span> <span class='prelude-val'>Some</span>(<span class='kw-2'>ref</span> <span class='kw-2'>mut</span> <span class='ident'>pointer</span>) <span class='op'>=</span> <span class='ident'>pointer</span> {
+            <span class='kw'>let</span> <span class='ident'>my_pointer</span> <span class='op'>=</span> <span class='ident'>pointer_state</span>.<span class='ident'>clone</span>();
+            <span class='ident'>pointer</span>.<span class='ident'>set_enter_action</span>(<span class='kw'>move</span> <span class='op'>|</span><span class='ident'>_pid</span>, <span class='ident'>_serial</span>, <span class='ident'>sid</span>, <span class='ident'>x</span>, <span class='ident'>y</span><span class='op'>|</span> {
+                <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>guard</span> <span class='op'>=</span> <span class='ident'>my_pointer</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>();
+                <span class='ident'>guard</span>.<span class='ident'>pointer_entered</span>(<span class='ident'>sid</span>);
+                <span class='ident'>guard</span>.<span class='ident'>coordinates</span> <span class='op'>=</span> (<span class='ident'>x</span>, <span class='ident'>y</span>);
             });
 
-            <span class='kw'>if</span> <span class='kw'>let</span> <span class='prelude-val'>Some</span>(<span class='kw-2'>ref</span> <span class='kw-2'>mut</span> <span class='ident'>pointer</span>) <span class='op'>=</span> <span class='ident'>internals_guard</span>.<span class='ident'>pointer</span>.<span class='ident'>as_mut</span>() {
-                <span class='kw'>let</span> <span class='ident'>my_internals</span> <span class='op'>=</span> <span class='ident'>internals</span>.<span class='ident'>clone</span>();
-                <span class='ident'>pointer</span>.<span class='ident'>set_enter_action</span>(<span class='kw'>move</span> <span class='op'>|</span><span class='ident'>_pid</span>, <span class='ident'>_serial</span>, <span class='ident'>sid</span>, <span class='ident'>x</span>, <span class='ident'>y</span><span class='op'>|</span> {
-                    <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>guard</span> <span class='op'>=</span> <span class='ident'>my_internals</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>();
-                    <span class='ident'>guard</span>.<span class='ident'>pointer_entered</span>(<span class='ident'>sid</span>);
-                    <span class='ident'>guard</span>.<span class='ident'>current_pointer_coordinates</span> <span class='op'>=</span> (<span class='ident'>x</span>, <span class='ident'>y</span>);
-                });
+            <span class='kw'>let</span> <span class='ident'>my_pointer</span> <span class='op'>=</span> <span class='ident'>pointer_state</span>.<span class='ident'>clone</span>();
+            <span class='ident'>pointer</span>.<span class='ident'>set_leave_action</span>(<span class='kw'>move</span> <span class='op'>|</span><span class='ident'>_pid</span>, <span class='ident'>_serial</span>, <span class='ident'>_sid</span><span class='op'>|</span> {
+                <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>guard</span> <span class='op'>=</span> <span class='ident'>my_pointer</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>();
+                <span class='ident'>guard</span>.<span class='ident'>pointer_left</span>();
+                <span class='ident'>guard</span>.<span class='ident'>coordinates</span> <span class='op'>=</span> (<span class='number'>0.</span>, <span class='number'>0.</span>);
+            });
 
-                <span class='kw'>let</span> <span class='ident'>my_internals</span> <span class='op'>=</span> <span class='ident'>internals</span>.<span class='ident'>clone</span>();
-                <span class='ident'>pointer</span>.<span class='ident'>set_leave_action</span>(<span class='kw'>move</span> <span class='op'>|</span><span class='ident'>_pid</span>, <span class='ident'>_serial</span>, <span class='ident'>_sid</span><span class='op'>|</span> {
-                    <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>guard</span> <span class='op'>=</span> <span class='ident'>my_internals</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>();
-                    <span class='ident'>guard</span>.<span class='ident'>pointer_left</span>();
-                    <span class='ident'>guard</span>.<span class='ident'>current_pointer_coordinates</span> <span class='op'>=</span> (<span class='number'>0.</span>, <span class='number'>0.</span>);
-                });
+            <span class='kw'>let</span> <span class='ident'>my_pointer</span> <span class='op'>=</span> <span class='ident'>pointer_state</span>.<span class='ident'>clone</span>();
+            <span class='ident'>pointer</span>.<span class='ident'>set_motion_action</span>(<span class='kw'>move</span> <span class='op'>|</span><span class='ident'>_pid</span>, <span class='ident'>_t</span>, <span class='ident'>x</span>, <span class='ident'>y</span><span class='op'>|</span> {
+                <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>guard</span> <span class='op'>=</span> <span class='ident'>my_pointer</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>();
+                <span class='ident'>guard</span>.<span class='ident'>coordinates</span> <span class='op'>=</span> (<span class='ident'>x</span>, <span class='ident'>y</span>);
+            });
 
-                <span class='kw'>let</span> <span class='ident'>my_internals</span> <span class='op'>=</span> <span class='ident'>internals</span>.<span class='ident'>clone</span>();
-                <span class='ident'>pointer</span>.<span class='ident'>set_motion_action</span>(<span class='kw'>move</span> <span class='op'>|</span><span class='ident'>_pid</span>, <span class='ident'>_t</span>, <span class='ident'>x</span>, <span class='ident'>y</span><span class='op'>|</span> {
-                    <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>guard</span> <span class='op'>=</span> <span class='ident'>my_internals</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>();
-                    <span class='ident'>guard</span>.<span class='ident'>current_pointer_coordinates</span> <span class='op'>=</span> (<span class='ident'>x</span>, <span class='ident'>y</span>);
-                })
-            }
-
+            <span class='kw'>let</span> <span class='ident'>my_pointer</span> <span class='op'>=</span> <span class='ident'>pointer_state</span>.<span class='ident'>clone</span>();
+            <span class='kw'>let</span> <span class='ident'>my_seat</span> <span class='op'>=</span> <span class='ident'>pointer</span>.<span class='ident'>get_seat</span>().<span class='ident'>clone</span>();
+            <span class='kw'>let</span> <span class='ident'>my_shell</span> <span class='op'>=</span> <span class='ident'>shell_surface</span>.<span class='ident'>clone</span>();
+            <span class='ident'>pointer</span>.<span class='ident'>set_button_action</span>(<span class='kw'>move</span> <span class='op'>|</span><span class='ident'>_pid</span>, <span class='ident'>serial</span>, <span class='ident'>_t</span>, <span class='ident'>button</span>, <span class='ident'>state</span><span class='op'>|</span> {
+                <span class='kw'>if</span> <span class='ident'>button</span> <span class='op'>!=</span> <span class='number'>0x110</span> { <span class='kw'>return</span>; }
+                <span class='kw'>if</span> <span class='ident'>state</span> <span class='op'>!=</span> <span class='ident'>ButtonState</span>::<span class='ident'>Pressed</span> { <span class='kw'>return</span>; }
+                <span class='kw'>let</span> <span class='ident'>pguard</span> <span class='op'>=</span> <span class='ident'>my_pointer</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>();
+                <span class='kw'>let</span> <span class='ident'>sguard</span> <span class='op'>=</span> <span class='ident'>my_shell</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>();
+                <span class='kw'>let</span> <span class='ident'>shell</span> <span class='op'>=</span> <span class='kw'>match</span> <span class='ident'>sguard</span>.<span class='ident'>as_ref</span>() {
+                    <span class='prelude-val'>Some</span>(<span class='ident'>s</span>) <span class='op'>=&gt;</span> <span class='ident'>s</span>,
+                    <span class='prelude-val'>None</span> <span class='op'>=&gt;</span> <span class='kw'>return</span>
+                };
+                <span class='kw'>let</span> (<span class='ident'>x</span>, <span class='ident'>y</span>) <span class='op'>=</span> <span class='ident'>pguard</span>.<span class='ident'>coordinates</span>;
+                <span class='kw'>let</span> <span class='ident'>w</span> <span class='op'>=</span> <span class='ident'>pguard</span>.<span class='ident'>surface_width</span>;
+                <span class='kw'>let</span> (<span class='ident'>direction</span>, <span class='ident'>resize</span>) <span class='op'>=</span> <span class='kw'>match</span> <span class='ident'>pguard</span>.<span class='ident'>location</span> {
+                    <span class='ident'>PtrLocation</span>::<span class='ident'>Top</span> <span class='op'>=&gt;</span> {
+                        <span class='kw'>if</span> <span class='ident'>y</span> <span class='op'>&lt;</span> <span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>f64</span> {
+                            <span class='kw'>if</span> <span class='ident'>x</span> <span class='op'>&lt;</span> <span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>f64</span> {
+                                (<span class='ident'>ShellSurfaceResize</span>::<span class='ident'>TopLeft</span>, <span class='boolval'>true</span>)
+                            } <span class='kw'>else</span> <span class='kw'>if</span> <span class='ident'>x</span> <span class='op'>&gt;</span> <span class='ident'>w</span> <span class='kw'>as</span> <span class='ident'>f64</span> <span class='op'>+</span> <span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>f64</span> {
+                                (<span class='ident'>ShellSurfaceResize</span>::<span class='ident'>TopRight</span>, <span class='boolval'>true</span>)
+                            } <span class='kw'>else</span> {
+                                (<span class='ident'>ShellSurfaceResize</span>::<span class='ident'>Top</span>, <span class='boolval'>true</span>)
+                            }
+                        } <span class='kw'>else</span> {
+                            <span class='kw'>if</span> <span class='ident'>x</span> <span class='op'>&lt;</span> <span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>f64</span> {
+                                (<span class='ident'>ShellSurfaceResize</span>::<span class='ident'>Left</span>, <span class='boolval'>true</span>)
+                            } <span class='kw'>else</span> <span class='kw'>if</span> <span class='ident'>x</span> <span class='op'>&gt;</span> <span class='ident'>w</span> <span class='kw'>as</span> <span class='ident'>f64</span> <span class='op'>+</span> <span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>f64</span> {
+                                (<span class='ident'>ShellSurfaceResize</span>::<span class='ident'>Right</span>, <span class='boolval'>true</span>)
+                            } <span class='kw'>else</span> {
+                                (<span class='ident'>ShellSurfaceResize</span>::<span class='prelude-val'>None</span>, <span class='boolval'>false</span>)
+                            }
+                        }
+                    },
+                    <span class='ident'>PtrLocation</span>::<span class='ident'>Bottom</span> <span class='op'>=&gt;</span> {
+                        <span class='kw'>if</span> <span class='ident'>x</span> <span class='op'>&lt;</span> <span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>f64</span> {
+                            (<span class='ident'>ShellSurfaceResize</span>::<span class='ident'>BottomLeft</span>, <span class='boolval'>true</span>)
+                        } <span class='kw'>else</span> <span class='kw'>if</span> <span class='ident'>x</span> <span class='op'>&gt;</span> <span class='ident'>w</span> <span class='kw'>as</span> <span class='ident'>f64</span> <span class='op'>+</span> <span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>f64</span> {
+                            (<span class='ident'>ShellSurfaceResize</span>::<span class='ident'>BottomRight</span>, <span class='boolval'>true</span>)
+                        } <span class='kw'>else</span> {
+                            (<span class='ident'>ShellSurfaceResize</span>::<span class='ident'>Bottom</span>, <span class='boolval'>true</span>)
+                        }
+                    },
+                    <span class='ident'>PtrLocation</span>::<span class='ident'>Left</span> <span class='op'>=&gt;</span> (<span class='ident'>ShellSurfaceResize</span>::<span class='ident'>Left</span>, <span class='boolval'>true</span>),
+                    <span class='ident'>PtrLocation</span>::<span class='ident'>Right</span> <span class='op'>=&gt;</span> (<span class='ident'>ShellSurfaceResize</span>::<span class='ident'>Right</span>, <span class='boolval'>true</span>),
+                    <span class='ident'>PtrLocation</span>::<span class='prelude-val'>None</span> <span class='op'>=&gt;</span> (<span class='ident'>ShellSurfaceResize</span>::<span class='prelude-val'>None</span>, <span class='boolval'>true</span>)
+                };
+                <span class='kw'>if</span> <span class='ident'>resize</span> {
+                    <span class='ident'>shell</span>.<span class='ident'>start_resize</span>(<span class='kw-2'>&amp;</span><span class='ident'>my_seat</span>, <span class='ident'>serial</span>, <span class='ident'>direction</span>);
+                } <span class='kw'>else</span> {
+                    <span class='ident'>shell</span>.<span class='ident'>start_move</span>(<span class='kw-2'>&amp;</span><span class='ident'>my_seat</span>, <span class='ident'>serial</span>);
+                }
+            });
         }
 
         <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>me</span> <span class='op'>=</span> <span class='ident'>DecoratedSurface</span> {
-            <span class='ident'>user_surface</span>: <span class='ident'>user_subsurface</span>,
-            <span class='ident'>internals</span>: <span class='ident'>internals</span>
+            <span class='ident'>shell_surface</span>: <span class='ident'>shell_surface</span>,
+            <span class='ident'>border_surfaces</span>: <span class='ident'>border_surfaces</span>,
+            <span class='ident'>buffers</span>: <span class='ident'>Vec</span>::<span class='ident'>new</span>(),
+            <span class='ident'>tempfile</span>: <span class='ident'>tempfile</span>,
+            <span class='ident'>pool</span>: <span class='ident'>pool</span>,
+            <span class='ident'>height</span>: <span class='ident'>height</span>,
+            <span class='ident'>width</span>: <span class='ident'>width</span>,
+            <span class='ident'>buffer_capacity</span>: <span class='ident'>pxcount</span> <span class='op'>*</span> <span class='number'>4</span>,
+            <span class='ident'>_pointer</span>: <span class='ident'>pointer</span>,
+            <span class='ident'>pointer_state</span>: <span class='ident'>pointer_state</span>
         };
 
         <span class='ident'>me</span>.<span class='ident'>resize</span>(<span class='ident'>width</span>, <span class='ident'>height</span>);
@@ -674,26 +745,23 @@
         <span class='prelude-val'>Ok</span>(<span class='ident'>me</span>)
     }
 
-    <span class='kw'>pub</span> <span class='kw'>fn</span> <span class='ident'>resize</span>(<span class='kw-2'>&amp;</span><span class='kw-2'>mut</span> <span class='self'>self</span>, <span class='ident'>width</span>: <span class='ident'>u32</span>, <span class='ident'>height</span>: <span class='ident'>u32</span>) {
-        <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>internals</span> <span class='op'>=</span> <span class='self'>self</span>.<span class='ident'>internals</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>();
-        <span class='ident'>internals</span>.<span class='ident'>resize</span>(<span class='ident'>width</span>, <span class='ident'>height</span>);
+    <span class='kw'>pub</span> <span class='kw'>fn</span> <span class='ident'>get_shell</span>(<span class='kw-2'>&amp;</span><span class='self'>self</span>) <span class='op'>-&gt;</span> <span class='ident'>SurfaceGuard</span><span class='op'>&lt;</span><span class='ident'>S</span><span class='op'>&gt;</span> {
+        <span class='ident'>SurfaceGuard</span> {
+            <span class='ident'>guard</span>: <span class='self'>self</span>.<span class='ident'>shell_surface</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>()
+        }
     }
 
-    <span class='doccomment'>/// Destroys the decorated window and gives back the wrapped surface.</span>
-    <span class='kw'>pub</span> <span class='kw'>fn</span> <span class='ident'>unwrap</span>(<span class='self'>self</span>) <span class='op'>-&gt;</span> <span class='ident'>S</span> {
-        <span class='self'>self</span>.<span class='ident'>user_surface</span>.<span class='ident'>destroy</span>()
-    }
-}
-
-<span class='kw'>impl</span><span class='op'>&lt;</span><span class='ident'>S</span>: <span class='ident'>Surface</span><span class='op'>&gt;</span> <span class='ident'>Deref</span> <span class='kw'>for</span> <span class='ident'>DecoratedSurface</span><span class='op'>&lt;</span><span class='ident'>S</span><span class='op'>&gt;</span> {
-    <span class='kw'>type</span> <span class='ident'>Target</span> <span class='op'>=</span> <span class='ident'>S</span>;
-    <span class='kw'>fn</span> <span class='ident'>deref</span>(<span class='kw-2'>&amp;</span><span class='self'>self</span>) <span class='op'>-&gt;</span> <span class='kw-2'>&amp;</span><span class='ident'>S</span> {
-        <span class='kw-2'>&amp;</span><span class='op'>*</span><span class='self'>self</span>.<span class='ident'>user_surface</span>
+    <span class='comment'>// Destroys the DecoratedSurface and returns the wrapped surface</span>
+    <span class='kw'>pub</span> <span class='kw'>fn</span> <span class='ident'>destroy</span>(<span class='self'>self</span>) <span class='op'>-&gt;</span> <span class='ident'>S</span> {
+        <span class='self'>self</span>.<span class='ident'>shell_surface</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>().<span class='ident'>take</span>().<span class='ident'>unwrap</span>().<span class='ident'>destroy</span>()
     }
 }
 
-<span class='kw'>extern</span> {
-    <span class='kw'>fn</span> <span class='ident'>mkstemp</span>(<span class='ident'>template</span>: <span class='op'>*</span><span class='kw-2'>mut</span> <span class='ident'>c_char</span>) <span class='op'>-&gt;</span> <span class='ident'>c_int</span>;
+<span class='kw'>pub</span> <span class='kw'>fn</span> <span class='ident'>substract_borders</span>(<span class='ident'>width</span>: <span class='ident'>i32</span>, <span class='ident'>height</span>: <span class='ident'>i32</span>) <span class='op'>-&gt;</span> (<span class='ident'>i32</span>, <span class='ident'>i32</span>) {
+    (
+        <span class='ident'>width</span> <span class='op'>-</span> <span class='number'>2</span><span class='op'>*</span>(<span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>),
+        <span class='ident'>height</span> <span class='op'>-</span> <span class='ident'>DECORATION_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span> <span class='op'>-</span> <span class='ident'>DECORATION_TOP_SIZE</span> <span class='kw'>as</span> <span class='ident'>i32</span>
+    )
 }
 </pre>
 </section>
