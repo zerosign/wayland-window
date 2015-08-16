@@ -45,17 +45,37 @@
             <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
                 [<span class='inner'>&#x2212;</span>]
             </a>
-        </span><a id='src-216' class='srclink' href='../src/wayland_window/decorated_surface.rs.html#72-83' title='goto source code'>[src]</a></span></h1>
-<pre class='rust struct'>pub struct DecoratedSurface&lt;S: Surface&gt; {
+        </span><a id='src-216' class='srclink' href='../src/wayland_window/decorated_surface.rs.html#81-92' title='goto source code'>[src]</a></span></h1>
+<pre class='rust struct'>pub struct DecoratedSurface&lt;S: <a class='trait' href='../wayland_client/core/trait.Surface.html' title='wayland_client::core::Surface'>Surface</a>&gt; {
     // some fields omitted
-}</pre><h2 id='methods'>Methods</h2><h3 class='impl'><code>impl&lt;S: Surface + <a class='trait' href='http://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='core::marker::Send'>Send</a> + 'static&gt; <a class='struct' href='../wayland_window/struct.DecoratedSurface.html' title='wayland_window::DecoratedSurface'>DecoratedSurface</a>&lt;S&gt;</code></h3><div class='impl-items'><h4 id='method.resize' class='method'><code>fn <a href='#method.resize' class='fnname'>resize</a>(&amp;mut self, width: <a href='http://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>, height: <a href='http://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>)</code></h4>
-<h4 id='method.new' class='method'><code>fn <a href='#method.new' class='fnname'>new</a>(user_surface: S, width: <a href='http://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>, height: <a href='http://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>, registry: &amp;Registry, seat: <a class='enum' href='http://doc.rust-lang.org/nightly/core/option/enum.Option.html' title='core::option::Option'>Option</a>&lt;&amp;Seat&gt;) -&gt; <a class='enum' href='http://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;<a class='struct' href='../wayland_window/struct.DecoratedSurface.html' title='wayland_window::DecoratedSurface'>DecoratedSurface</a>&lt;S&gt;, S&gt;</code></h4>
+}</pre><div class='docblock'><p>A wrapper for a decorated surface.</p>
+
+<p>This is the main object of this crate. It wraps a user provided
+wayland surface into a <code>ShellSurface</code> and gives you acces to it
+via the <code>.get_shell()</code> method.</p>
+
+<p>It also handles the drawing of minimalistic borders allowing the
+resizing and moving of the window. See the root documentation of
+this crate for explanations about how to use it.</p>
+</div><h2 id='methods'>Methods</h2><h3 class='impl'><code>impl&lt;S: <a class='trait' href='../wayland_client/core/trait.Surface.html' title='wayland_client::core::Surface'>Surface</a> + <a class='trait' href='http://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='core::marker::Send'>Send</a> + 'static&gt; <a class='struct' href='../wayland_window/struct.DecoratedSurface.html' title='wayland_window::DecoratedSurface'>DecoratedSurface</a>&lt;S&gt;</code></h3><div class='impl-items'><h4 id='method.resize' class='method'><code>fn <a href='#method.resize' class='fnname'>resize</a>(&amp;mut self, width: <a href='http://doc.rust-lang.org/nightly/std/primitive.i32.html'>i32</a>, height: <a href='http://doc.rust-lang.org/nightly/std/primitive.i32.html'>i32</a>)</code></h4>
+<div class='docblock'><p>Resizes the borders to given width and height.</p>
+
+<p>These values should be the dimentions of the internal surface of the
+window (the decorated window will thus be a little larger).</p>
+</div><h4 id='method.new' class='method'><code>fn <a href='#method.new' class='fnname'>new</a>(user_surface: S, width: <a href='http://doc.rust-lang.org/nightly/std/primitive.i32.html'>i32</a>, height: <a href='http://doc.rust-lang.org/nightly/std/primitive.i32.html'>i32</a>, registry: &amp;<a class='struct' href='../wayland_client/core/registry/struct.Registry.html' title='wayland_client::core::registry::Registry'>Registry</a>, seat: <a class='enum' href='http://doc.rust-lang.org/nightly/core/option/enum.Option.html' title='core::option::Option'>Option</a>&lt;&amp;<a class='struct' href='../wayland_client/core/seat/seat/struct.Seat.html' title='wayland_client::core::seat::seat::Seat'>Seat</a>&gt;) -&gt; <a class='enum' href='http://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;<a class='struct' href='../wayland_window/struct.DecoratedSurface.html' title='wayland_window::DecoratedSurface'>DecoratedSurface</a>&lt;S&gt;, S&gt;</code></h4>
 <div class='docblock'><p>Creates a new decorated window around given surface.</p>
 
 <p>If the creation failed (likely if the registry was not ready), hands back the surface.</p>
-</div><h4 id='method.get_shell' class='method'><code>fn <a href='#method.get_shell' class='fnname'>get_shell</a>(&amp;self) -&gt; SurfaceGuard&lt;S&gt;</code></h4>
-<h4 id='method.destroy' class='method'><code>fn <a href='#method.destroy' class='fnname'>destroy</a>(self) -&gt; S</code></h4>
-</div></section>
+</div><h4 id='method.get_shell' class='method'><code>fn <a href='#method.get_shell' class='fnname'>get_shell</a>(&amp;self) -&gt; <a class='struct' href='../wayland_window/struct.SurfaceGuard.html' title='wayland_window::SurfaceGuard'>SurfaceGuard</a>&lt;S&gt;</code></h4>
+<div class='docblock'><p>Creates a guard giving you access to the shell surface wrapped
+in this object.</p>
+
+<p>Calling for a processing of the events from the wayland server
+(via <code>Display::dispatch()</code> for example) while this guard is in
+scope may result in a deadlock.</p>
+</div><h4 id='method.destroy' class='method'><code>fn <a href='#method.destroy' class='fnname'>destroy</a>(self) -&gt; S</code></h4>
+<div class='docblock'><p>Destroys the DecoratedSurface and returns the wrapped surface</p>
+</div></div></section>
     <section id='search' class="content hidden"></section>
 
     <section class="footer"></section>
