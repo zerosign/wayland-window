@@ -52,7 +52,8 @@ wayland applications.</p>
 <p>This crate is only usable in conjuction of the
 <a href="https://crates.io/crates/wayland-client"><code>wayland-client</code></a> crate.</p>
 
-<h2 id='creating-a-decorated-shell-surface' class='section-header'><a href='#creating-a-decorated-shell-surface'>Creating a decorated shell surface</a></h2>
+<h2 id="creating-a-decorated-shell-surface" class='section-header'><a
+                           href="#creating-a-decorated-shell-surface">Creating a decorated shell surface</a></h2>
 <p>Creating a decorated window is as simple as wrapping it in a
 <code>DecoratedSurface</code>:</p>
 <pre class='rust rust-example-rendered'>
@@ -65,7 +66,8 @@ to user input in the borders, for resizeing and move. It will use the events pro
 seat you passed as argument. (So if you are on a setup with more than one pointer,
 only the one associated with this seat will be able to resize the window).</p>
 
-<h2 id='processing-the-events' class='section-header'><a href='#processing-the-events'>Processing the events</a></h2>
+<h2 id="processing-the-events" class='section-header'><a
+                           href="#processing-the-events">Processing the events</a></h2>
 <p>The <code>DecoratedSurface</code> object will not resize your window itself, as it cannot do it.</p>
 
 <p>When the user clicks on a border and starts a resize, the server will start to generate a
@@ -94,7 +96,8 @@ of your program, like this:</p>
     <span class='ident'>window</span>.<span class='ident'>resize</span>(<span class='ident'>x</span>, <span class='ident'>y</span>);
 }</pre>
 
-<h2 id='resizing-the-surface' class='section-header'><a href='#resizing-the-surface'>Resizing the surface</a></h2>
+<h2 id="resizing-the-surface" class='section-header'><a
+                           href="#resizing-the-surface">Resizing the surface</a></h2>
 <p>When resizing your main surface, you need to tell the <code>DecoratedSurface</code> that it
 must update its dimensions. This is very simple:</p>
 <pre class='rust rust-example-rendered'>
@@ -127,6 +130,15 @@ by this library.</li>
                     </tr>
                 </table><h2 id='functions' class='section-header'><a href="#functions">Functions</a></h2>
 <table>
+                    <tr class=' module-item'>
+                        <td><a class='fn' href='fn.add_borders.html'
+                               title='wayland_window::add_borders'>add_borders</a></td>
+                        <td class='docblock short'>
+                             <p>Adds the border dimensions to the given dimensions.</p>
+
+                        </td>
+                    </tr>
+                
                     <tr class=' module-item'>
                         <td><a class='fn' href='fn.substract_borders.html'
                                title='wayland_window::substract_borders'>substract_borders</a></td>
